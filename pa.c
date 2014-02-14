@@ -6,7 +6,7 @@
 
 typedef struct
 {
-	GtkBox *widget;
+	GtkWidget *widget;
 	GtkScale *slider;
 	GtkLabel *title;
 	GtkImage *icon;
@@ -49,6 +49,7 @@ int main (int argc, char **argv)
 	api = pa_glib_mainloop_get_api (loop);
 	app.context = pa_context_new (api, NULL);
 	app.sinks = g_hash_table_new_full (NULL, NULL, NULL, g_free);
+	app.active_sink = NULL;
 
 	pa_context_set_subscribe_callback (app.context, subscribe_callback, &app);
 	pa_context_set_state_callback (app.context, state_callback, &app);
@@ -71,50 +72,66 @@ int main (int argc, char **argv)
 	pa_glib_mainloop_free (loop);
 }
 
-void highlight_sink (App *app, GtkWidget *new_widget, GtkWidget *old_widget)
+void highlight_sink (App *app, Sink *new, Sink *old)
 {
-	if (old_widget)
-		gtk_widget_override_background_color (old_widget, GTK_STATE_FLAG_NORMAL, NULL);
+	if (old)
+		gtk_widget_override_background_color (old->widget, GTK_STATE_FLAG_NORMAL, NULL);
 
 	GdkRGBA color = { 1.0, 1.0, 1.0, 1.0 };
 
-	printf ("HIGHLIGHT!!\n");
-	gtk_widget_override_background_color (new_widget, GTK_STATE_FLAG_NORMAL, &color);
+	gtk_widget_override_background_color (new->widget, GTK_STATE_FLAG_NORMAL, &color);
+	gtk_widget_grab_focus (GTK_WIDGET (new->slider));
+}
+
+void update_volume_finished_cb (pa_context *context, int success, void *userdata)
+{
+	Sink *sink = userdata;
+
+	sink->current_operation = NULL;
 }
 
 gboolean key_press_callback (GtkWidget *widget, GdkEventKey *event, void *userdata)
 {
+	App *app = userdata;
 	int direction = 0;
 
 	switch (event->keyval) {
 		case GDK_KEY_Up:
-		case GDK_KEY_J:
+		case GDK_KEY_j:
 			direction = -1;
 			break;
 		case GDK_KEY_Down:
-		case GDK_KEY_K:
+		case GDK_KEY_k:
 			direction = 1;
+			break;
+		case GDK_KEY_x:
+		case GDK_KEY_m:
+			if (app->active_sink->current_operation)
+				pa_operation_cancel (app->active_sink->current_operation);
+
+			int is_muted = pa_cvolume_is_muted (&app->active_sink->volume);
+
+			app->active_sink->volume = *pa_cvolume_scale (&app->active_sink->volume,
+				is_muted ? PA_VOLUME_NORM : PA_VOLUME_MUTED);
+
+			app->active_sink->current_operation = pa_context_set_sink_input_volume (app->active_sink->context,
+				app->active_sink->index, &app->active_sink->volume, update_volume_finished_cb, app->active_sink);
 			break;
 	}
 
 	if (direction == 0)
 		return FALSE;
 
-	App *app = userdata;
 	gpointer next_active_widget = NULL;
 
 	GList *l = gtk_container_get_children (GTK_CONTAINER (app->list));
 
-	printf ("ACTIVE: %u\n", app->active_sink->index);
-
 	// find next widget in the list
 	while (l) {
-		printf ("%p %p\n", l->data, app->active_sink->widget);
-
 		if (l->data == app->active_sink->widget) {
-			if (direction < 0)
+			if (direction < 0 && l->prev)
 				next_active_widget = l->prev->data;
-			else
+			else if (l->next)
 				next_active_widget = l->next->data;
 			break;
 		}
@@ -131,8 +148,7 @@ gboolean key_press_callback (GtkWidget *widget, GdkEventKey *event, void *userda
 		while (l) {
 			if (((Sink *)l->data)->widget == next_active_widget) {
 
-				highlight_sink (app, GTK_WIDGET (next_active_widget),
-					GTK_WIDGET (app->active_sink->widget));
+				highlight_sink (app, l->data, app->active_sink);
 
 				app->active_sink = l->data;
 
@@ -155,13 +171,6 @@ double sink_get_volume (const pa_sink_input_info *info)
 	current_volume = pa_cvolume_max (&info->volume);
 
 	return (double)current_volume / PA_VOLUME_NORM;
-}
-
-void update_volume_finished_cb (pa_context *context, int success, void *userdata)
-{
-	Sink *sink = userdata;
-
-	sink->current_operation = NULL;
 }
 
 void update_volume (GtkRange *widget, Sink *sink)
@@ -208,15 +217,20 @@ Sink *update_sink (App *app, const pa_sink_input_info *info)
 	sink = g_hash_table_lookup (app->sinks, GUINT_TO_POINTER (info->index));
 
 	if (sink == NULL) {
+		GtkBox *box;
+
 		sink = malloc (sizeof (Sink));
 
 		sink->app_moves_slider = FALSE;
 		sink->current_operation = NULL;
-		sink->widget = GTK_BOX (gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6));
+		sink->widget = gtk_event_box_new ();
 		sink->title = GTK_LABEL (gtk_label_new (NULL));
 		sink->slider = GTK_SCALE (gtk_scale_new_with_range (GTK_ORIENTATION_HORIZONTAL, 0.0, 1.0, 0.1));
 		sink->icon = GTK_IMAGE (gtk_image_new ());
 		sink->context = app->context;
+
+		box = GTK_BOX (gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6));
+		g_object_set (G_OBJECT (box), "margin", 6, NULL);
 
 		gtk_scale_set_draw_value (sink->slider, 0);
 		g_signal_connect (G_OBJECT (sink->slider), "value-changed", (GCallback)update_volume, sink);
@@ -227,9 +241,10 @@ Sink *update_sink (App *app, const pa_sink_input_info *info)
 		gtk_misc_set_alignment (GTK_MISC (sink->title), 0.0, 0.5);
 		g_object_set (G_OBJECT (sink->title), "width-request", 80, NULL);
 
-		gtk_box_pack_start (sink->widget, GTK_WIDGET (sink->icon), 0, 0, 0);
-		gtk_box_pack_start (sink->widget, GTK_WIDGET (sink->title), 0, 0, 0);
-		gtk_box_pack_start (sink->widget, GTK_WIDGET (sink->slider), 1, 1, 0);
+		gtk_box_pack_start (box, GTK_WIDGET (sink->icon), 0, 0, 0);
+		gtk_box_pack_start (box, GTK_WIDGET (sink->title), 0, 0, 0);
+		gtk_box_pack_start (box, GTK_WIDGET (sink->slider), 1, 1, 0);
+		gtk_container_add (GTK_CONTAINER (sink->widget), GTK_WIDGET (box));
 		gtk_widget_show_all (GTK_WIDGET (sink->widget));
 
 		gtk_box_pack_start (app->list, GTK_WIDGET (sink->widget), 0, 0, 0);
@@ -238,6 +253,7 @@ Sink *update_sink (App *app, const pa_sink_input_info *info)
 
 		if (app->active_sink == NULL) {
 			app->active_sink = sink;
+			highlight_sink (app, sink, NULL);
 		}
 	}
 
@@ -322,16 +338,18 @@ void subscribe_callback (pa_context *context, pa_subscription_event_type_t t,
 		case PA_SUBSCRIPTION_EVENT_REMOVE:
 			sink = g_hash_table_lookup (app->sinks, GUINT_TO_POINTER (index));
 
-			if (sink == app->active_sink) {
-				// assign first item in list or NULL
-				app->active_sink = g_hash_table_get_values (app->sinks)->data;
-			}
-
 			if (sink) {
 				gtk_container_remove (GTK_CONTAINER (app->list), GTK_WIDGET (sink->widget));
 				g_hash_table_remove (app->sinks, GUINT_TO_POINTER (index));
 
 				resize (app);
+			}
+
+			if (sink == app->active_sink) {
+				// assign first item in list or NULL
+				app->active_sink = g_hash_table_get_values (app->sinks)->data;
+				if (app->active_sink)
+					highlight_sink (app, app->active_sink, NULL);
 			}
 
 			break;

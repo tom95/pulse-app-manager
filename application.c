@@ -171,10 +171,12 @@ gboolean _key_press_callback (GtkWidget *widget, GdkEventKey *event, void *userd
 	switch (event->keyval) {
 		case GDK_KEY_Up:
 		case GDK_KEY_j:
+		case GDK_KEY_w:
 			direction = -1;
 			break;
 		case GDK_KEY_Down:
 		case GDK_KEY_k:
+		case GDK_KEY_s:
 			direction = 1;
 			break;
 		case GDK_KEY_Escape:
@@ -182,11 +184,13 @@ gboolean _key_press_callback (GtkWidget *widget, GdkEventKey *event, void *userd
 			gtk_widget_hide (app->window);
 			break;
 		case GDK_KEY_h:
+		case GDK_KEY_a:
 			g_signal_emit_by_name (app->active_sink->slider,
 			                       "move-slider",
 								   GTK_SCROLL_STEP_LEFT);
 			break;
 		case GDK_KEY_l:
+		case GDK_KEY_d:
 			g_signal_emit_by_name (app->active_sink->slider,
 			                       "move-slider",
 								   GTK_SCROLL_STEP_RIGHT);

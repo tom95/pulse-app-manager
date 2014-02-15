@@ -17,3 +17,6 @@
 *.out
 *.app
 pa
+
+# build dir
+build/

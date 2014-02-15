@@ -286,18 +286,18 @@ pulse_manager_app_command_line (GApplication *application,
 	char **argv;
 	char *subject;
 
-	if (!app->active_sink) {
-		printf ("No sink selected, aborting.\n");
-		exit (1);
-		return 1;
-	}
-
 	argv = g_application_command_line_get_arguments (command_line, &argc);
 
 	// no special command, just show
 	if (argc < 2) {
 		pulse_manager_app_activate (application);
 		return 0;
+	}
+
+	if (!app->active_sink) {
+		printf ("No sink selected, aborting.\n");
+		exit (1);
+		return 1;
 	}
 
 	subject = argv[1];

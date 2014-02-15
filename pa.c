@@ -104,6 +104,15 @@ gboolean key_press_callback (GtkWidget *widget, GdkEventKey *event, void *userda
 		case GDK_KEY_k:
 			direction = 1;
 			break;
+		case GDK_KEY_Escape:
+			gtk_widget_hide (GTK_WIDGET (app->window));
+			break;
+		case GDK_KEY_h:
+			g_signal_emit_by_name (app->active_sink->slider, "move-slider", GTK_SCROLL_STEP_LEFT);
+			break;
+		case GDK_KEY_l:
+			g_signal_emit_by_name (app->active_sink->slider, "move-slider", GTK_SCROLL_STEP_RIGHT);
+			break;
 		case GDK_KEY_x:
 		case GDK_KEY_m:
 			if (app->active_sink->current_operation)

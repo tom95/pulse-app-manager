@@ -144,14 +144,18 @@ _state_callback (pa_context *context, void *userdata)
 			pa_context_get_sink_input_info_list (context, _got_sink_info_callback, app);
 			break;
 		case PA_CONTEXT_FAILED:
+			printf ("Connecting to pulse failed.\n");
+			pa_strerror (pa_context_errno (context));
 			break;
 		case PA_CONTEXT_TERMINATED:
+			printf ("Context terminated.\n");
 			break;
 		case PA_CONTEXT_SETTING_NAME:
 			break;
 		case PA_CONTEXT_AUTHORIZING:
 			break;
 		case PA_CONTEXT_UNCONNECTED:
+			printf ("Context unconnected.\n");
 			break;
 	}
 }
